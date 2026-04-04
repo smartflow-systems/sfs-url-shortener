@@ -1,206 +1,165 @@
 import express from "express";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
+import { randomBytes } from "crypto";
+import { config } from "dotenv";
+
+config();
 
 const app = express();
-
-// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Load config once at startup
-const config = JSON.parse(readFileSync("./public/site.config.json", "utf-8"));
+const siteConfig = JSON.parse(readFileSync("./public/site.config.json", "utf-8"));
 
-// Ensure data directory exists
 const dataDir = "./data";
-if (!existsSync(dataDir)) {
-  mkdirSync(dataDir, { recursive: true });
+if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true });
+
+const BASE_URL = process.env.BASE_SHORT_URL || `http://localhost:${process.env.PORT || 5000}`;
+const CODE_LENGTH = parseInt(process.env.SHORT_CODE_LENGTH || "6", 10);
+
+// --- JSON store helpers ---
+function readStore(file, defaultVal) {
+  try { return JSON.parse(readFileSync(file, "utf-8")); }
+  catch { return defaultVal; }
+}
+function writeStore(file, data) {
+  writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-// Leads database file path
+const urlsFile = join(dataDir, "urls.json");
 const leadsFile = join(dataDir, "leads.json");
 
-// Initialize leads file if it doesn't exist
-if (!existsSync(leadsFile)) {
-  writeFileSync(leadsFile, JSON.stringify({ leads: [] }, null, 2));
+if (!existsSync(urlsFile)) writeStore(urlsFile, { urls: [] });
+if (!existsSync(leadsFile)) writeStore(leadsFile, { leads: [] });
+
+// --- URL helpers ---
+function generateCode() {
+  return randomBytes(Math.ceil(CODE_LENGTH * 0.75)).toString("base64url").slice(0, CODE_LENGTH);
+}
+function isValidUrl(str) {
+  try { const u = new URL(str); return u.protocol === "http:" || u.protocol === "https:"; }
+  catch { return false; }
 }
 
-// Helper: Read leads
-function readLeads() {
-  try {
-    const data = readFileSync(leadsFile, "utf-8");
-    return JSON.parse(data);
-  } catch (error) {
-    console.error("Error reading leads:", error);
-    return { leads: [] };
-  }
-}
-
-// Helper: Write leads
-function writeLeads(data) {
-  try {
-    writeFileSync(leadsFile, JSON.stringify(data, null, 2));
-    return true;
-  } catch (error) {
-    console.error("Error writing leads:", error);
-    return false;
-  }
-}
-
-// serve everything from /public
+// --- Static ---
 app.use(express.static("public"));
 
-// health check with site info
-app.get("/health", (_req, res) => res.json({
-  ok: true,
-  siteName: config.siteName,
-  version: config.version
-}));
-app.get("/api/health", (_req, res) => res.json({
-  ok: true,
-  siteName: config.siteName,
-  version: config.version
-}));
+// --- Health ---
+app.get("/health", (_req, res) => res.json({ ok: true, siteName: siteConfig.siteName, version: siteConfig.version }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, siteName: siteConfig.siteName, version: siteConfig.version }));
 
-// API: Submit Lead
+// --- Shorten ---
+app.post("/api/shorten", (req, res) => {
+  const { url, custom_code } = req.body;
+  if (!url || !isValidUrl(url)) {
+    return res.status(400).json({ success: false, message: "A valid http/https URL is required" });
+  }
+
+  const store = readStore(urlsFile, { urls: [] });
+  let code = custom_code?.trim();
+
+  if (code) {
+    if (!/^[a-zA-Z0-9_-]{3,20}$/.test(code)) {
+      return res.status(400).json({ success: false, message: "Custom code must be 3-20 alphanumeric characters" });
+    }
+    if (store.urls.find(u => u.short_code === code)) {
+      return res.status(409).json({ success: false, message: "Custom code already taken" });
+    }
+  } else {
+    let attempts = 0;
+    do {
+      code = generateCode();
+      if (++attempts > 10) return res.status(500).json({ success: false, message: "Failed to generate unique code" });
+    } while (store.urls.find(u => u.short_code === code));
+  }
+
+  const entry = {
+    id: `url_${Date.now()}`,
+    short_code: code,
+    original_url: url,
+    clicks: 0,
+    created_at: new Date().toISOString(),
+  };
+  store.urls.unshift(entry);
+  writeStore(urlsFile, store);
+
+  res.status(201).json({
+    success: true,
+    short_code: code,
+    short_url: `${BASE_URL}/${code}`,
+    original_url: url,
+  });
+});
+
+// --- Stats ---
+app.get("/api/stats/:code", (req, res) => {
+  const store = readStore(urlsFile, { urls: [] });
+  const entry = store.urls.find(u => u.short_code === req.params.code);
+  if (!entry) return res.status(404).json({ success: false, message: "Short URL not found" });
+  res.json({ success: true, ...entry, short_url: `${BASE_URL}/${entry.short_code}` });
+});
+
+// --- List ---
+app.get("/api/urls", (_req, res) => {
+  const store = readStore(urlsFile, { urls: [] });
+  const urls = store.urls.slice(0, 100).map(u => ({ ...u, short_url: `${BASE_URL}/${u.short_code}` }));
+  res.json({ success: true, count: urls.length, urls });
+});
+
+// --- Delete ---
+app.delete("/api/urls/:code", (req, res) => {
+  const store = readStore(urlsFile, { urls: [] });
+  const idx = store.urls.findIndex(u => u.short_code === req.params.code);
+  if (idx === -1) return res.status(404).json({ success: false, message: "Not found" });
+  store.urls.splice(idx, 1);
+  writeStore(urlsFile, store);
+  res.json({ success: true });
+});
+
+// --- Leads ---
 app.post("/api/leads", (req, res) => {
-  try {
-    const { firstName, lastName, email, company, phone, source } = req.body;
-
-    // Validate required fields
-    if (!firstName || !lastName || !email) {
-      return res.status(400).json({
-        success: false,
-        message: "First name, last name, and email are required"
-      });
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid email format"
-      });
-    }
-
-    // Read existing leads
-    const data = readLeads();
-
-    // Check for duplicate email
-    const existingLead = data.leads.find(lead => lead.email === email);
-    if (existingLead) {
-      return res.status(200).json({
-        success: true,
-        message: "Lead already exists",
-        leadId: existingLead.id
-      });
-    }
-
-    // Create new lead
-    const newLead = {
-      id: `lead_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      firstName,
-      lastName,
-      email,
-      company: company || "",
-      phone: phone || "",
-      source: source || "direct",
-      status: "new",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-
-    // Add lead to array
-    data.leads.push(newLead);
-
-    // Save to file
-    if (!writeLeads(data)) {
-      throw new Error("Failed to save lead");
-    }
-
-    console.log(`✓ New lead captured: ${email}`);
-
-    // Return success
-    res.status(201).json({
-      success: true,
-      message: "Lead captured successfully",
-      leadId: newLead.id
-    });
-
-  } catch (error) {
-    console.error("Lead submission error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error"
-    });
+  const { firstName, lastName, email, company, phone, source } = req.body;
+  if (!firstName || !lastName || !email) {
+    return res.status(400).json({ success: false, message: "First name, last name, and email are required" });
   }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ success: false, message: "Invalid email format" });
+  }
+  const store = readStore(leadsFile, { leads: [] });
+  const existing = store.leads.find(l => l.email === email);
+  if (existing) return res.json({ success: true, message: "Lead already exists", leadId: existing.id });
+  const lead = {
+    id: `lead_${Date.now()}_${randomBytes(4).toString("hex")}`,
+    firstName, lastName, email,
+    company: company || "", phone: phone || "",
+    source: source || "direct", status: "new",
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  };
+  store.leads.push(lead);
+  writeStore(leadsFile, store);
+  res.status(201).json({ success: true, message: "Lead captured successfully", leadId: lead.id });
 });
 
-// API: Get All Leads (admin only - no auth for now, add later)
 app.get("/api/leads", (_req, res) => {
-  try {
-    const data = readLeads();
-    res.json({
-      success: true,
-      count: data.leads.length,
-      leads: data.leads
-    });
-  } catch (error) {
-    console.error("Error fetching leads:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to fetch leads"
-    });
-  }
+  const store = readStore(leadsFile, { leads: [] });
+  res.json({ success: true, count: store.leads.length, leads: store.leads });
 });
 
-// API: Stripe Checkout (placeholder - requires Stripe configuration)
-app.post("/api/stripe/checkout", async (req, res) => {
-  try {
-    const { planId, successUrl, cancelUrl } = req.body;
-
-    // Load pricing data
-    const pricingData = JSON.parse(readFileSync("./public/pricing.json", "utf-8"));
-    const plan = pricingData.plans.find(p => p.id === planId);
-
-    if (!plan) {
-      return res.status(404).json({
-        success: false,
-        message: "Plan not found"
-      });
-    }
-
-    // TODO: Implement Stripe checkout session
-    // For now, return a placeholder response
-    // You'll need to:
-    // 1. Install stripe package: npm install stripe
-    // 2. Add STRIPE_SECRET_KEY to .env
-    // 3. Create Stripe checkout session
-
-    console.log(`Checkout requested for plan: ${planId}`);
-
-    // Placeholder response
-    res.json({
-      success: true,
-      message: "Stripe integration pending",
-      planId,
-      plan: plan.name,
-      price: plan.price,
-      // In production, return: url: session.url
-      url: `/contact.html?plan=${planId}` // Temporary redirect to contact
-    });
-
-  } catch (error) {
-    console.error("Checkout error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Failed to create checkout session"
-    });
-  }
+// --- Redirect (last, before 404) ---
+app.get("/:code", (req, res, next) => {
+  if (req.params.code.includes(".")) return next();
+  const store = readStore(urlsFile, { urls: [] });
+  const entry = store.urls.find(u => u.short_code === req.params.code);
+  if (!entry) return next();
+  entry.clicks++;
+  writeStore(urlsFile, store);
+  res.redirect(301, entry.original_url);
 });
 
-// port
-const port = process.env.PORT || 5000;
-app.listen(port, () => console.log(`serving on ${port}`));
+app.use((_req, res) => res.status(404).json({ success: false, message: "Not found" }));
+
+const port = parseInt(process.env.PORT || "5000", 10);
+app.listen(port, "0.0.0.0", () => console.log(`SFS URL Shortener running on port ${port}`));
+
 export default app;
