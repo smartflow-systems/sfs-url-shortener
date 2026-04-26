@@ -146,6 +146,20 @@ app.get("/api/leads", (_req, res) => {
   res.json({ success: true, count: store.leads.length, leads: store.leads });
 });
 
+// --- Hub product routes ---
+const hubRoutes = {
+  book:    process.env.BOOK_URL    || "https://github.com/smartflow-systems/Barber-booker-tempate-v1",
+  ai:      process.env.AI_URL      || "https://github.com/smartflow-systems/SocialScaleBoosterAIbot",
+  demo:    process.env.DEMO_URL    || "https://github.com/smartflow-systems",
+  contact: process.env.CONTACT_URL || "mailto:boweazy123@gmail.com",
+};
+
+app.get("/shorten", (_req, res) => res.sendFile(join(process.cwd(), "public/shortener.html")));
+
+Object.entries(hubRoutes).forEach(([slug, target]) => {
+  app.get(`/${slug}`, (_req, res) => res.redirect(302, target));
+});
+
 // --- Redirect (last, before 404) ---
 app.get("/:code", (req, res, next) => {
   if (req.params.code.includes(".")) return next();

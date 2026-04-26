@@ -1,259 +1,186 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SFS URL Shortener — SmartFlow Systems</title>
-  <link rel="stylesheet" href="/theme/sfs-complete-theme.css" />
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SmartFlow Systems — AI Automation That Makes You Money</title>
 
-    :root {
-      --gold: #FFD700;
-      --gold-dim: #c9a227;
-      --brown: #3B2F2F;
-      --black: #0D0D0D;
-      --surface: #1a1410;
-      --surface2: #231c17;
-      --border: rgba(255,215,0,0.15);
-      --text: #f0e8d8;
-      --text-dim: #a0937e;
-    }
+<meta property="og:title" content="SmartFlow Systems — AI Automation That Makes You Money" />
+<meta property="og:description" content="Booking systems, AI bots, and automation tools for real businesses." />
+<meta property="og:image" content="/assets/og-image.png" />
+<meta property="og:url" content="https://smartflowsystems.co.uk" />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="SmartFlow Systems — AI Automation That Makes You Money" />
+<meta name="twitter:description" content="Booking systems, AI bots, and automation tools for real businesses." />
+<meta name="twitter:image" content="/assets/og-image.png" />
 
-    body {
-      background: var(--black);
-      color: var(--text);
-      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    header {
-      border-bottom: 1px solid var(--border);
-      padding: 1rem 2rem;
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-    header .logo { font-weight: 700; font-size: 1.1rem; color: var(--gold); letter-spacing: 0.02em; }
-    header .sub { color: var(--text-dim); font-size: 0.85rem; }
+  :root {
+    --gold: #d4af37;
+    --gold-bright: #FFD700;
+    --black: #0b0b0b;
+    --surface: #151210;
+    --surface2: #1e1810;
+    --border: rgba(212,175,55,0.2);
+    --text: #f0e8d8;
+    --text-dim: #9a8a70;
+  }
 
-    main {
-      flex: 1;
-      max-width: 680px;
-      width: 100%;
-      margin: 3rem auto;
-      padding: 0 1.5rem;
-    }
+  body {
+    background: var(--black);
+    color: var(--text);
+    font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.25rem;
+  }
 
-    h1 { font-size: 2rem; font-weight: 700; line-height: 1.2; margin-bottom: 0.5rem; }
-    h1 span { color: var(--gold); }
-    .tagline { color: var(--text-dim); margin-bottom: 2.5rem; font-size: 0.95rem; }
+  .container {
+    width: 100%;
+    max-width: 420px;
+    text-align: center;
+  }
 
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.75rem;
-      margin-bottom: 1.5rem;
-    }
+  .logo-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border: 2px solid var(--gold);
+    border-radius: 14px;
+    font-size: 1.4rem;
+    font-weight: 900;
+    color: var(--gold);
+    letter-spacing: -0.03em;
+    margin-bottom: 1.25rem;
+    background: var(--surface);
+  }
 
-    label { display: block; font-size: 0.8rem; color: var(--text-dim); margin-bottom: 0.4rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  h1 {
+    font-size: 1.55rem;
+    font-weight: 800;
+    color: var(--text);
+    line-height: 1.2;
+    margin-bottom: 0.5rem;
+    letter-spacing: -0.02em;
+  }
 
-    input[type="url"], input[type="text"] {
-      width: 100%;
-      background: var(--black);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      font-size: 0.95rem;
-      padding: 0.65rem 0.9rem;
-      outline: none;
-      transition: border-color 0.15s;
-      margin-bottom: 1rem;
-    }
-    input:focus { border-color: var(--gold); }
+  h1 span { color: var(--gold); }
 
-    .row { display: flex; gap: 0.75rem; }
-    .row input { margin-bottom: 0; }
+  .tagline {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    margin-bottom: 2.25rem;
+    line-height: 1.5;
+  }
 
-    button {
-      background: var(--gold);
-      color: var(--black);
-      border: none;
-      border-radius: 8px;
-      font-weight: 700;
-      font-size: 0.95rem;
-      padding: 0.65rem 1.5rem;
-      cursor: pointer;
-      transition: background 0.15s, opacity 0.15s;
-      white-space: nowrap;
-    }
-    button:hover { background: #ffe44d; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .links {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 2rem;
+  }
 
-    #result {
-      display: none;
-      background: var(--surface2);
-      border: 1px solid rgba(255,215,0,0.3);
-      border-radius: 8px;
-      padding: 1rem 1.25rem;
-      margin-top: 1rem;
-    }
-    #result .label { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.35rem; }
-    #result .short-link { display: flex; align-items: center; gap: 0.75rem; }
-    #result a { color: var(--gold); font-weight: 600; font-size: 1rem; text-decoration: none; word-break: break-all; }
-    #result a:hover { text-decoration: underline; }
-    #copy-btn { background: transparent; border: 1px solid var(--border); color: var(--text-dim); font-size: 0.8rem; font-weight: 600; padding: 0.3rem 0.75rem; border-radius: 6px; flex-shrink: 0; }
-    #copy-btn:hover { border-color: var(--gold); color: var(--gold); background: transparent; }
-    #error { display: none; color: #ff6b6b; font-size: 0.85rem; margin-top: 0.75rem; }
+  .btn {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    background: var(--surface);
+    color: var(--text);
+    padding: 1rem 1.25rem;
+    text-decoration: none;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 0.95rem;
+    font-weight: 600;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+    text-align: left;
+  }
 
-    .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-    .history-header h2 { font-size: 1rem; font-weight: 600; }
-    .history-header button { background: transparent; border: 1px solid var(--border); color: var(--text-dim); font-size: 0.75rem; font-weight: 600; padding: 0.3rem 0.75rem; }
-    .history-header button:hover { border-color: var(--gold); color: var(--gold); }
+  .btn:hover {
+    border-color: var(--gold);
+    background: var(--surface2);
+    color: var(--gold);
+  }
 
-    #url-list { display: flex; flex-direction: column; gap: 0.75rem; }
-    .url-item {
-      background: var(--black);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 0.8rem 1rem;
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
-    .url-item .info { flex: 1; min-width: 0; }
-    .url-item .short { color: var(--gold); font-weight: 600; font-size: 0.9rem; }
-    .url-item .original { color: var(--text-dim); font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.2rem; }
-    .url-item .meta { font-size: 0.75rem; color: var(--text-dim); text-align: right; flex-shrink: 0; }
-    .url-item .clicks { color: var(--gold); font-weight: 700; }
-    .empty { color: var(--text-dim); font-size: 0.9rem; text-align: center; padding: 1.5rem 0; }
-  </style>
+  .btn .icon {
+    font-size: 1.15rem;
+    flex-shrink: 0;
+    width: 1.5rem;
+    text-align: center;
+  }
+
+  .btn .label {
+    flex: 1;
+  }
+
+  .btn .arrow {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    flex-shrink: 0;
+    transition: color 0.15s;
+  }
+
+  .btn:hover .arrow { color: var(--gold); }
+
+  .footer {
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    border-top: 1px solid var(--border);
+    padding-top: 1.25rem;
+  }
+
+  .footer a {
+    color: var(--text-dim);
+    text-decoration: none;
+  }
+
+  .footer a:hover { color: var(--gold); }
+
+  @media (min-width: 480px) {
+    h1 { font-size: 1.8rem; }
+  }
+</style>
 </head>
 <body>
-  <header>
-    <div class="logo">SFS</div>
-    <div class="sub">URL Shortener</div>
-  </header>
+<div class="container">
+  <div class="logo-mark">SF</div>
+  <h1>SmartFlow <span>Systems</span></h1>
+  <p class="tagline">AI automation that makes you money</p>
 
-  <main>
-    <h1>Short links, <span>fast.</span></h1>
-    <p class="tagline">Shorten any URL. Track clicks. No signup required.</p>
+  <div class="links">
+    <a class="btn" href="/book">
+      <span class="icon">📅</span>
+      <span class="label">Booking System Demo</span>
+      <span class="arrow">→</span>
+    </a>
+    <a class="btn" href="/ai">
+      <span class="icon">🤖</span>
+      <span class="label">AI Social Growth Bot</span>
+      <span class="arrow">→</span>
+    </a>
+    <a class="btn" href="/demo">
+      <span class="icon">🚀</span>
+      <span class="label">View All Systems</span>
+      <span class="arrow">→</span>
+    </a>
+    <a class="btn" href="/contact">
+      <span class="icon">📞</span>
+      <span class="label">Contact / Get Setup</span>
+      <span class="arrow">→</span>
+    </a>
+  </div>
 
-    <div class="card">
-      <label for="long-url">Long URL</label>
-      <input type="url" id="long-url" placeholder="https://example.com/very/long/path" />
-      <div class="row">
-        <input type="text" id="custom-code" placeholder="Custom code (optional)" style="flex:1" />
-        <button id="shorten-btn">Shorten</button>
-      </div>
-      <div id="error"></div>
-      <div id="result">
-        <div class="label">Your short link</div>
-        <div class="short-link">
-          <a id="result-link" href="#" target="_blank"></a>
-          <button id="copy-btn">Copy</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="history-header">
-        <h2>Recent links</h2>
-        <button id="refresh-btn">Refresh</button>
-      </div>
-      <div id="url-list"><div class="empty">No links yet.</div></div>
-    </div>
-  </main>
-
-  <script>
-    const shortenBtn = document.getElementById('shorten-btn');
-    const copyBtn = document.getElementById('copy-btn');
-    const refreshBtn = document.getElementById('refresh-btn');
-    const resultEl = document.getElementById('result');
-    const resultLink = document.getElementById('result-link');
-    const errorEl = document.getElementById('error');
-    const urlList = document.getElementById('url-list');
-
-    function showError(msg) {
-      errorEl.textContent = msg;
-      errorEl.style.display = 'block';
-      resultEl.style.display = 'none';
-    }
-    function clearMessages() {
-      errorEl.style.display = 'none';
-      resultEl.style.display = 'none';
-    }
-
-    shortenBtn.addEventListener('click', async () => {
-      clearMessages();
-      const url = document.getElementById('long-url').value.trim();
-      const custom_code = document.getElementById('custom-code').value.trim();
-      if (!url) return showError('Please enter a URL.');
-
-      shortenBtn.disabled = true;
-      try {
-        const res = await fetch('/api/shorten', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, custom_code: custom_code || undefined }),
-        });
-        const data = await res.json();
-        if (!data.success) return showError(data.message);
-        resultLink.href = data.short_url;
-        resultLink.textContent = data.short_url;
-        resultEl.style.display = 'block';
-        document.getElementById('long-url').value = '';
-        document.getElementById('custom-code').value = '';
-        loadLinks();
-      } catch {
-        showError('Request failed. Check your connection.');
-      } finally {
-        shortenBtn.disabled = false;
-      }
-    });
-
-    copyBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(resultLink.href).then(() => {
-        copyBtn.textContent = 'Copied!';
-        setTimeout(() => copyBtn.textContent = 'Copy', 1500);
-      });
-    });
-
-    async function loadLinks() {
-      try {
-        const res = await fetch('/api/urls');
-        const data = await res.json();
-        if (!data.urls?.length) {
-          urlList.innerHTML = '<div class="empty">No links yet.</div>';
-          return;
-        }
-        urlList.innerHTML = data.urls.map(u => `
-          <div class="url-item">
-            <div class="info">
-              <div class="short"><a href="${u.short_url}" target="_blank">${u.short_url}</a></div>
-              <div class="original" title="${u.original_url}">${u.original_url}</div>
-            </div>
-            <div class="meta">
-              <div class="clicks">${u.clicks} click${u.clicks !== 1 ? 's' : ''}</div>
-              <div>${new Date(u.created_at).toLocaleDateString()}</div>
-            </div>
-          </div>
-        `).join('');
-      } catch {
-        urlList.innerHTML = '<div class="empty">Failed to load links.</div>';
-      }
-    }
-
-    refreshBtn.addEventListener('click', loadLinks);
-
-    document.getElementById('long-url').addEventListener('keydown', e => {
-      if (e.key === 'Enter') shortenBtn.click();
-    });
-
-    loadLinks();
-  </script>
+  <div class="footer">
+    <a href="/shorten">URL Shortener</a> &nbsp;·&nbsp; SmartFlow Systems
+  </div>
+</div>
 </body>
 </html>
