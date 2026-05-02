@@ -226,3 +226,6 @@ lerna-debug.log*
 *.swp
 *.swo
 *~
+data/
+GitHub
+email
