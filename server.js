@@ -1,4 +1,7 @@
 import express from "express";
+import helmet from "helmet";
+import cors from "cors";
+import rateLimit from "express-rate-limit";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { randomBytes, createHash } from "crypto";
@@ -9,8 +12,41 @@ import QRCode from "qrcode";
 config();
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+// Security middleware
+app.use(helmet());
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(",").map(o => o.trim())
+    : ["http://localhost:5000"],
+  credentials: true,
+}));
+
+// Rate limiting
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const shortenLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many requests, please try again later." },
+});
+const verifyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many password attempts." },
+});
+app.use(globalLimiter);
+
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
 const siteConfig = JSON.parse(readFileSync("./public/site.config.json", "utf-8"));
 
@@ -30,9 +66,9 @@ function writeStore(file, data) {
   writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-const urlsFile       = join(dataDir, "urls.json");
-const leadsFile      = join(dataDir, "leads.json");
-const analyticsFile  = join(dataDir, "analytics.json");
+const urlsFile      = join(dataDir, "urls.json");
+const leadsFile     = join(dataDir, "leads.json");
+const analyticsFile = join(dataDir, "analytics.json");
 
 if (!existsSync(urlsFile))      writeStore(urlsFile,      { urls: [] });
 if (!existsSync(leadsFile))     writeStore(leadsFile,     { leads: [] });
@@ -43,11 +79,16 @@ function generateCode() {
   return randomBytes(Math.ceil(CODE_LENGTH * 0.75)).toString("base64url").slice(0, CODE_LENGTH);
 }
 function isValidUrl(str) {
-  try { const u = new URL(str); return u.protocol === "http:" || u.protocol === "https:"; }
-  catch { return false; }
+  try {
+    const u = new URL(str);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch { return false; }
 }
+
+// Use SHA-256 with a pepper for URL password hashing (simple protection, not bcrypt)
+const PASSWORD_PEPPER = process.env.PASSWORD_PEPPER || "sfs-url-shortener-pepper";
 function hashPassword(pw) {
-  return createHash("sha256").update(pw).digest("hex");
+  return createHash("sha256").update(pw + PASSWORD_PEPPER).digest("hex");
 }
 
 function recordClick(code, req) {
@@ -66,16 +107,15 @@ function recordClick(code, req) {
   else if (/tablet|ipad/i.test(ua)) device = "tablet";
 
   let browser = "Other";
-  if (/Edg\//.test(ua))                           browser = "Edge";
-  else if (/Chrome\//.test(ua))                   browser = "Chrome";
-  else if (/Firefox\//.test(ua))                  browser = "Firefox";
-  else if (/Safari\//.test(ua))                   browser = "Safari";
+  if (/Edg\//.test(ua))         browser = "Edge";
+  else if (/Chrome\//.test(ua)) browser = "Chrome";
+  else if (/Firefox\//.test(ua)) browser = "Firefox";
+  else if (/Safari\//.test(ua)) browser = "Safari";
 
   analytics.clicks[code].push({
     timestamp: new Date().toISOString(),
-    ip,
-    country:  geo?.country  || "Unknown",
-    city:     geo?.city     || "",
+    country:  geo?.country || "Unknown",
+    city:     geo?.city    || "",
     referrer: req.headers.referer || req.headers.referrer || "",
     device,
     browser,
@@ -84,9 +124,11 @@ function recordClick(code, req) {
   writeStore(analyticsFile, analytics);
 }
 
-// --- API key middleware (no-op when API_KEYS not configured) ---
+// --- API key middleware ---
 function requireApiKey(req, res, next) {
-  if (!API_KEYS.length) return next();
+  if (!API_KEYS.length) {
+    return res.status(503).json({ success: false, message: "API access not configured" });
+  }
   const auth = req.headers.authorization;
   const key  = auth?.startsWith("Bearer ") ? auth.slice(7) : req.headers["x-api-key"];
   if (!key || !API_KEYS.includes(key)) {
@@ -99,11 +141,11 @@ function requireApiKey(req, res, next) {
 app.use(express.static("public"));
 
 // --- Health ---
-app.get("/health",     (_req, res) => res.json({ ok: true, siteName: siteConfig.siteName, version: siteConfig.version }));
+app.get("/health",     (_req, res) => res.json({ ok: true }));
 app.get("/api/health", (_req, res) => res.json({ ok: true, siteName: siteConfig.siteName, version: siteConfig.version }));
 
 // --- Shorten (single) ---
-app.post("/api/shorten", requireApiKey, (req, res) => {
+app.post("/api/shorten", requireApiKey, shortenLimiter, (req, res) => {
   const {
     url, custom_code, expires_at, password,
     utm_source, utm_medium, utm_campaign, utm_content, utm_term,
@@ -112,11 +154,14 @@ app.post("/api/shorten", requireApiKey, (req, res) => {
   if (!url || !isValidUrl(url)) {
     return res.status(400).json({ success: false, message: "A valid http/https URL is required" });
   }
+  if (typeof url !== "string" || url.length > 2048) {
+    return res.status(400).json({ success: false, message: "URL too long" });
+  }
 
   // Build UTM-appended destination
   let finalUrl = url;
   const utmEntries = Object.entries({ utm_source, utm_medium, utm_campaign, utm_content, utm_term })
-    .filter(([, v]) => v?.trim());
+    .filter(([, v]) => v && typeof v === "string" && v.trim().length > 0 && v.trim().length < 200);
   if (utmEntries.length) {
     const parsed = new URL(url);
     utmEntries.forEach(([k, v]) => parsed.searchParams.set(k, v.trim()));
@@ -148,7 +193,7 @@ app.post("/api/shorten", requireApiKey, (req, res) => {
     clicks:        0,
     created_at:    new Date().toISOString(),
     expires_at:    expires_at || null,
-    password_hash: password ? hashPassword(password) : null,
+    password_hash: password ? hashPassword(String(password).slice(0, 200)) : null,
     has_password:  !!password,
   };
 
@@ -164,7 +209,7 @@ app.post("/api/shorten", requireApiKey, (req, res) => {
 });
 
 // --- Shorten (bulk, up to 50) ---
-app.post("/api/shorten/bulk", requireApiKey, (req, res) => {
+app.post("/api/shorten/bulk", requireApiKey, shortenLimiter, (req, res) => {
   const { urls } = req.body;
   if (!Array.isArray(urls) || !urls.length) {
     return res.status(400).json({ success: false, message: "urls array is required" });
@@ -177,7 +222,7 @@ app.post("/api/shorten/bulk", requireApiKey, (req, res) => {
   const results = [];
 
   for (const item of urls) {
-    const url  = typeof item === "string" ? item : item?.url;
+    const url = typeof item === "string" ? item : item?.url;
     if (!url || !isValidUrl(url)) {
       results.push({ success: false, url, message: "Invalid URL" });
       continue;
@@ -218,8 +263,11 @@ app.post("/api/shorten/bulk", requireApiKey, (req, res) => {
   res.status(207).json({ success: true, count: results.filter(r => r.success).length, results });
 });
 
-// --- Stats ---
+// --- Stats (public, no sensitive data) ---
 app.get("/api/stats/:code", (req, res) => {
+  if (!/^[a-zA-Z0-9_-]{1,20}$/.test(req.params.code)) {
+    return res.status(400).json({ success: false, message: "Invalid code" });
+  }
   const store = readStore(urlsFile, { urls: [] });
   const entry = store.urls.find(u => u.short_code === req.params.code);
   if (!entry) return res.status(404).json({ success: false, message: "Short URL not found" });
@@ -229,6 +277,9 @@ app.get("/api/stats/:code", (req, res) => {
 
 // --- Analytics ---
 app.get("/api/analytics/:code", requireApiKey, (req, res) => {
+  if (!/^[a-zA-Z0-9_-]{1,20}$/.test(req.params.code)) {
+    return res.status(400).json({ success: false, message: "Invalid code" });
+  }
   const store = readStore(urlsFile, { urls: [] });
   const entry = store.urls.find(u => u.short_code === req.params.code);
   if (!entry) return res.status(404).json({ success: false, message: "Short URL not found" });
@@ -238,21 +289,21 @@ app.get("/api/analytics/:code", requireApiKey, (req, res) => {
 
   const countries = {}, devices = {}, browsers = {}, referrers = {}, byDay = {};
   for (const c of clicks) {
-    countries[c.country]                     = (countries[c.country] || 0) + 1;
-    devices[c.device]                        = (devices[c.device]   || 0) + 1;
-    browsers[c.browser]                      = (browsers[c.browser] || 0) + 1;
+    countries[c.country]                 = (countries[c.country] || 0) + 1;
+    devices[c.device]                    = (devices[c.device]   || 0) + 1;
+    browsers[c.browser]                  = (browsers[c.browser] || 0) + 1;
     const ref = c.referrer || "Direct";
-    referrers[ref]                           = (referrers[ref]      || 0) + 1;
+    referrers[ref]                       = (referrers[ref]      || 0) + 1;
     const day = c.timestamp.slice(0, 10);
-    byDay[day]                               = (byDay[day]          || 0) + 1;
+    byDay[day]                           = (byDay[day]          || 0) + 1;
   }
 
   const { password_hash, ...safe } = entry;
   res.json({
-    success:       true,
+    success:      true,
     ...safe,
-    short_url:     `${BASE_URL}/${entry.short_code}`,
-    total_clicks:  entry.clicks,
+    short_url:    `${BASE_URL}/${entry.short_code}`,
+    total_clicks: entry.clicks,
     stats: { by_country: countries, by_device: devices, by_browser: browsers, by_referrer: referrers, by_day: byDay },
     recent_clicks: clicks.slice(-20).reverse(),
   });
@@ -260,6 +311,9 @@ app.get("/api/analytics/:code", requireApiKey, (req, res) => {
 
 // --- QR code ---
 app.get("/api/qr/:code", async (req, res) => {
+  if (!/^[a-zA-Z0-9_-]{1,20}$/.test(req.params.code)) {
+    return res.status(400).json({ success: false, message: "Invalid code" });
+  }
   const store = readStore(urlsFile, { urls: [] });
   const entry = store.urls.find(u => u.short_code === req.params.code);
   if (!entry) return res.status(404).json({ success: false, message: "Short URL not found" });
@@ -287,8 +341,8 @@ app.get("/api/qr/:code", async (req, res) => {
   }
 });
 
-// --- List ---
-app.get("/api/urls", (_req, res) => {
+// --- List (requires API key) ---
+app.get("/api/urls", requireApiKey, (_req, res) => {
   const store = readStore(urlsFile, { urls: [] });
   const urls  = store.urls.slice(0, 100).map(({ password_hash, ...u }) => ({
     ...u,
@@ -299,13 +353,15 @@ app.get("/api/urls", (_req, res) => {
 
 // --- Delete ---
 app.delete("/api/urls/:code", requireApiKey, (req, res) => {
+  if (!/^[a-zA-Z0-9_-]{1,20}$/.test(req.params.code)) {
+    return res.status(400).json({ success: false, message: "Invalid code" });
+  }
   const store = readStore(urlsFile, { urls: [] });
   const idx   = store.urls.findIndex(u => u.short_code === req.params.code);
   if (idx === -1) return res.status(404).json({ success: false, message: "Not found" });
   store.urls.splice(idx, 1);
   writeStore(urlsFile, store);
 
-  // Clean up analytics
   const analytics = readStore(analyticsFile, { clicks: {} });
   delete analytics.clicks[req.params.code];
   writeStore(analyticsFile, analytics);
@@ -314,14 +370,17 @@ app.delete("/api/urls/:code", requireApiKey, (req, res) => {
 });
 
 // --- Password verify ---
-app.post("/api/verify/:code", (req, res) => {
+app.post("/api/verify/:code", verifyLimiter, (req, res) => {
+  if (!/^[a-zA-Z0-9_-]{1,20}$/.test(req.params.code)) {
+    return res.status(400).json({ success: false, message: "Invalid code" });
+  }
   const { password } = req.body;
   const store = readStore(urlsFile, { urls: [] });
   const entry = store.urls.find(u => u.short_code === req.params.code);
   if (!entry) return res.status(404).json({ success: false, message: "Not found" });
   if (!entry.password_hash) return res.json({ success: true, redirect: entry.original_url });
 
-  if (hashPassword(password || "") !== entry.password_hash) {
+  if (hashPassword(String(password || "").slice(0, 200)) !== entry.password_hash) {
     return res.status(401).json({ success: false, message: "Incorrect password" });
   }
 
@@ -332,23 +391,36 @@ app.post("/api/verify/:code", (req, res) => {
 });
 
 // --- Leads ---
-app.post("/api/leads", (req, res) => {
+app.post("/api/leads", shortenLimiter, (req, res) => {
   const { firstName, lastName, email, company, phone, source } = req.body;
+
   if (!firstName || !lastName || !email) {
     return res.status(400).json({ success: false, message: "First name, last name, and email are required" });
+  }
+  if (
+    typeof firstName !== "string" || firstName.length > 100 ||
+    typeof lastName !== "string"  || lastName.length > 100 ||
+    typeof email !== "string"     || email.length > 254
+  ) {
+    return res.status(400).json({ success: false, message: "Invalid field length" });
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ success: false, message: "Invalid email format" });
   }
+
   const store    = readStore(leadsFile, { leads: [] });
   const existing = store.leads.find(l => l.email === email);
   if (existing) return res.json({ success: true, message: "Lead already exists", leadId: existing.id });
+
   const lead = {
     id:        `lead_${Date.now()}_${randomBytes(4).toString("hex")}`,
     firstName, lastName, email,
-    company:   company || "", phone: phone || "",
-    source:    source  || "direct", status: "new",
-    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    company:   company ? String(company).slice(0, 200) : "",
+    phone:     phone   ? String(phone).slice(0, 30)   : "",
+    source:    source  ? String(source).slice(0, 50)  : "direct",
+    status:    "new",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
   store.leads.push(lead);
   writeStore(leadsFile, store);
@@ -365,7 +437,6 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), (req, res
   if (!process.env.STRIPE_WEBHOOK_SECRET) {
     return res.status(500).json({ success: false, message: "Missing STRIPE_WEBHOOK_SECRET" });
   }
-  console.log("[stripe] webhook received");
   res.json({ received: true });
 });
 
@@ -385,9 +456,11 @@ Object.entries(hubRoutes).forEach(([slug, target]) => {
 
 // --- Redirect (must come last before 404) ---
 app.get("/:code", (req, res, next) => {
-  if (req.params.code.includes(".")) return next();
+  const code = req.params.code;
+  if (code.includes(".") || !/^[a-zA-Z0-9_-]{1,20}$/.test(code)) return next();
+
   const store = readStore(urlsFile, { urls: [] });
-  const entry = store.urls.find(u => u.short_code === req.params.code);
+  const entry = store.urls.find(u => u.short_code === code);
   if (!entry) return next();
 
   // Expiration check
@@ -412,7 +485,14 @@ app.get("/:code", (req, res, next) => {
   res.redirect(301, entry.original_url);
 });
 
+// 404
 app.use((_req, res) => res.status(404).json({ success: false, message: "Not found" }));
+
+// Global error handler
+app.use((err, _req, res, _next) => {
+  console.error("Unhandled error:", err.message || "Unknown error");
+  res.status(err.status || 500).json({ success: false, message: "Internal server error" });
+});
 
 const port = parseInt(process.env.PORT || "5000", 10);
 app.listen(port, "0.0.0.0", () => console.log(`SFS URL Shortener running on port ${port}`));
